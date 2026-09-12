@@ -62,6 +62,73 @@ PRONOUNCE = {}
 
 FA_REPL = {ord("ك"): "ک", ord("ي"): "ی", ord("ة"): "ه"}
 
+_UNITS = ["", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"]
+_TEENS = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"]
+_TENS = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"]
+_HUNDREDS = ["", "صد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد", "هفتصد", "هشتصد", "نهصد"]
+
+
+def _three_group(n: int) -> str:
+    parts = []
+    h, r = divmod(n, 100)
+    if h:
+        parts.append(_HUNDREDS[h])
+    if r:
+        if 10 <= r <= 19:
+            parts.append(_TEENS[r - 10])
+        else:
+            t, u = divmod(r, 10)
+            if t:
+                parts.append(_TENS[t])
+            if u:
+                parts.append(_UNITS[u])
+    return " و ".join(p for p in parts if p)
+
+
+def _num_to_fa(n: int) -> str:
+    if n == 0:
+        return "صفر"
+    scales = [("هزار", 3), ("میلیون", 6), ("میلیارد", 9), ("هزار میلیارد", 12)]
+    groups = []
+    m = n
+    while m > 0:
+        groups.append(m % 1000)
+        m //= 1000
+    parts = []
+    for i, g in reversed(list(enumerate(groups))):
+        if g == 0:
+            continue
+        w = _three_group(g)
+        if i > 0:
+            scale = scales[min(i - 1, len(scales) - 1)][0]
+            # 1000 -> "هزار", not "یک هزار"
+            if not (g == 1):
+                w += " " + scale
+            else:
+                w = scale
+        parts.append(w)
+    return " و ".join(parts)
+
+
+# Map digit characters (Arabic + Persian) to ASCII before word conversion.
+_DIGIT_MAP = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+
+
+def to_words(text: str) -> str:
+    """Convert every integer in *text* to Persian word form (e.g. ۱۴ -> چهارده).
+
+    Handles both Arabic (٠-٩) and Persian (۰-۹) digits. The full-width digit
+    count in *text* stays unchanged otherwise.
+    """
+    def _rep(m):
+        digits = m.group(0).translate(_DIGIT_MAP)
+        try:
+            n = int(digits)
+        except ValueError:
+            return m.group(0)
+        return _num_to_fa(n)
+    return re.sub(r"[0-9۰-۹٠-٩]+", _rep, text)
+
 
 def fa_clean(t):
     if not t:
@@ -70,6 +137,42 @@ def fa_clean(t):
     # Common OCR corruption: كاال (ك+ا+ا+ل) instead of كالا (ك+ا+ل+ا).
     # Fix so the word is both spelled and pronounced correctly ("کالا").
     s = s.replace("کاال", "کالا")
+    # Break of the "لا" ligature: "ک ال" (ک+space+ا+ل) is "کالا" scanned as
+    # two tokens. The space snuck in between ک and ا, and the trailing ا of
+    # کالا was lost, giving "ک ال". Rebuild as کالا. Multiply-replace to
+    # sweep variants like ک الهای، ک الیی، ک الها.
+    s = s.replace("ک الیی", "کالایی").replace("ک ال", "کالا")
+    # "نمانکالتور" -> "نومنکلاتور" (systeme harmonise nomenclature).
+    s = s.replace("نمانکالتور", "نومنکلاتور")
+    # Arabic yeh in "اسلام": scanned as "اسالم" (ا+س+ا+ل+م).
+    s = s.replace("اسالم", "اسلام")
+    # Common OCR ligature swaps.
+    s = s.replace("اصطالحات", "اصطلاحات")
+    s = s.replace("اصالحات", "اصلاحات")
+    # Stray question-number digit glued right after a question mark
+    # (e.g. "…است؟4" where 4 is the PDF question number). Drop it.
+    # Also allows end-of-string (the digit is the last char of the text).
+    s = re.sub(r"[؟?][\s]*([0-9۰-۹٠-٩]+)(?=[\s\.,)؛:]|$)", "؟", s)
+    # Stray footnote/endnote digit glued after "برای" (e.g. "برای1 کشورهای").
+    # These are line-number artefacts, not numbers to read aloud.
+    s = re.sub(r"برای\s*[0-9۰-۹٠-٩]+(?=\s|[،,؛؛.؟؟]|$)", "برای", s)
+    # PDF list-marker digit glued to the previous word, followed by a period
+    # (e.g. "نامیده1 . طبق ماده20"). Legit citations (ماده16) are never
+    # followed by ". ", so drop digit + period safely.
+    s = re.sub(r"([\u0600-\u06FF\u200c])[0-9۰-۹٠-٩]+[\s]*\.[\s]*", r"\1 ", s)
+    # Leftover period after a question mark whose trailing digit got dropped.
+    s = re.sub(r"[؟?][\s]*\.[\s]*", "؟", s)
+    # Question mark glued to following letter ("دارد؟طبق").
+    s = re.sub(r"[؟?]([\u0600-\u06FF])", r"? \1", s)
+    # Leading OCR punctuation noise (". مطابق ...") and leading PDF
+    # line-number digit ("1 . مطابق" -> "مطابق").
+    s = re.sub(r"^[\s\.،،،؛:؛]+", "", s)
+    s = re.sub(r"^[0-9۰-۹٠-٩]+[\s]*\.[\s]*", "", s)
+    # Put a space between a Persian letter and a glued digit so legal
+    # citations read correctly after to_words: "ماده16" -> "ماده ۱۶" ->
+    # "ماده شانزده". Also the reverse (digit then Persian letter).
+    s = re.sub(r"([\u0600-\u06FF\u200c])([0-9۰-۹٠-٩]+)", r"\1 \2", s)
+    s = re.sub(r"([0-9۰-۹٠-٩]+)([\u0600-\u06FF])", r"\1 \2", s)
     return s
 
 OUT.mkdir(parents=True, exist_ok=True)
@@ -117,11 +220,12 @@ def load_questions(fin_path, selected, sec_sel=None):
 
 def build_segments(q):
     segs = {}
-    segs["q"] = fa_clean(f"سوال {q['num']}. {q['question']}")
+    body = to_words(fa_clean(q["question"]))
+    segs["q"] = f"سوال {to_words(str(q['num']))}. {body}"
     for i in range(4):
-        segs[f"o{i+1}"] = fa_clean(f"گزینه {NUMWORDS[i + 1]}. {q['options'][i]}")
-    segs["a"] = fa_clean(f"پاسخ صحیح، گزینه {NUMWORDS[q['correct']]} است. {q['options'][q['correct'] - 1]}")
-    segs["r"] = fa_clean((q.get("reason") or "").strip()) or "طبق مفاد قانون امور گمرکی"
+        segs[f"o{i+1}"] = to_words(fa_clean(f"گزینه {NUMWORDS[i + 1]}. {q['options'][i]}"))
+    segs["a"] = to_words(fa_clean(f"پاسخ صحیح، گزینه {NUMWORDS[q['correct']]} است. {q['options'][q['correct'] - 1]}"))
+    segs["r"] = to_words(fa_clean((q.get("reason") or "").strip())) or "طبق مفاد قانون امور گمرکی"
     return segs
 
 
@@ -160,7 +264,7 @@ def qa_check(q, segs, durs):
             if i != c and _norm(o) == _norm(opts[c - 1]):
                 probs.append(f"گزینه {i} با پاسخ صحیح یکسان است")
     if _norm(segs["a"].replace(f"پاسخ صحیح، گزینه {NUMWORDS[c]} است.", "")) and \
-       _norm(opts[c - 1]) not in _norm(segs["a"]):
+       _norm(to_words(opts[c - 1])) not in _norm(segs["a"]):
         probs.append("پاسخ صحیح با متن انطباق ندارد")
 
     for key in SEG_ORDER:
@@ -227,7 +331,11 @@ def render(q, out_file):
     #   --props=/path/to/props.json   (avoids Windows CLI quote/escape mangling).
     # Write the file as UTF-8 (no BOM) so Persian text loads correctly.
     props_file = WORK / f"props_q{q['num']}.json"
-    props_file.write_bytes(json.dumps({"q": q}, ensure_ascii=False, indent=1).encode("utf-8"))
+    qshow = dict(q)
+    qshow["question"] = to_words(fa_clean(q["question"]))
+    qshow["options"] = [to_words(fa_clean(o)) for o in q["options"]]
+    qshow["reason"] = to_words(fa_clean(q.get("reason") or ""))
+    props_file.write_bytes(json.dumps({"q": qshow}, ensure_ascii=False, indent=1).encode("utf-8"))
     cmd = [str(REMOTION_BIN), "render", str(INDEX_TS), "CustomsQuestion", str(out_file),
            f"--props={props_file}",
            "--browser-executable", CHROME]
@@ -261,8 +369,8 @@ def tofa(n):
 
 
 def build_caption(q, limit=1000):
-    body = fa_clean(q['question'])
-    opts = [f"{FA_N[i]}) {fa_clean(opt)}" for i, opt in enumerate(q["options"])]
+    body = to_words(fa_clean(q['question']))
+    opts = [f"{FA_N[i]}) {to_words(fa_clean(opt))}" for i, opt in enumerate(q["options"])]
     ans = f"✅ پاسخ صحیح: گزینه {FA_N[q['correct'] - 1]}"
 
     # Question + options + correct answer only.

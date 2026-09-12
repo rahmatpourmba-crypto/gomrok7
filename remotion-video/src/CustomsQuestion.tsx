@@ -51,14 +51,16 @@ const GAP = 10;
 // truncates the last part of a spoken segment.
 const APAD = 18;
 const ALEN = (s: number) => Math.ceil(s * FPS) + APAD;
+// a few seconds of quiet before the answer is revealed (سوال -> مکث -> جواب)
+const ANSWER_PAUSE = Math.round(3.5 * FPS);
 
 export const cqTiming = (q: CustomQ): Timing => {
   const qEnd = CQ_OPEN + ALEN(q.audio.q);
   const o1 = qEnd + GAP;
-  const o2 = o1 + ALEN(q.audio.o1) + GAP;
-  const o3 = o2 + ALEN(q.audio.o2) + GAP;
-  const o4 = o3 + ALEN(q.audio.o3) + GAP;
-  const aStart = o4 + ALEN(q.audio.o4) + GAP;
+  const o2 = o1 + GAP;
+  const o3 = o2 + GAP;
+  const o4 = o3 + GAP;
+  const aStart = o4 + ANSWER_PAUSE;
   const rStart = aStart + ALEN(q.audio.a) + GAP;
   const rEnd = rStart + ALEN(q.audio.r);
   const end = Math.max(rEnd, CQ_MIN_SECONDS * FPS) + 60;
@@ -66,10 +68,6 @@ export const cqTiming = (q: CustomQ): Timing => {
 };
 
 const oStartOf = (t: Timing, i: number) => (i === 0 ? t.o1 : i === 1 ? t.o2 : i === 2 ? t.o3 : t.o4);
-const durOf = (q: CustomQ, i: number) =>
-  ALEN((i === 0 ? q.audio.o1 : i === 1 ? q.audio.o2 : i === 2 ? q.audio.o3 : q.audio.o4));
-
-const OPT_KEYS = ['o1', 'o2', 'o3', 'o4'] as const;
 
 // ---- visual helpers ----
 const Vignette: React.FC = () => (
@@ -406,11 +404,6 @@ const Main: React.FC<{q: CustomQ; t: Timing}> = ({q, t}) => {
       <Sequence from={CQ_OPEN} durationInFrames={ALEN(q.audio.q)}>
         <Audio src={cqAudioFor(q.num, 'q')} />
       </Sequence>
-      {OPT_KEYS.map((k, i) => (
-        <Sequence key={k} from={oStartOf(t, i)} durationInFrames={durOf(q, i)}>
-          <Audio src={cqAudioFor(q.num, k)} />
-        </Sequence>
-      ))}
       <Sequence from={t.aStart} durationInFrames={ALEN(q.audio.a)}>
         <Audio src={cqAudioFor(q.num, 'a')} />
       </Sequence>
