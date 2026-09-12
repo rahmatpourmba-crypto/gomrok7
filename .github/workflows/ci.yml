@@ -4,14 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       chunk_size:
-        description: Questions processed per job (default 10)
-        default: "10"
+        description: Questions processed per job (default 12)
+        default: "12"
       max_parallel:
         description: Max parallel jobs (default 20)
         default: "20"
-      questions:
-        description: Optional explicit comma-list (e.g. 21,22) to test only those; empty = all 2843
-        default: ""
+      start_from:
+        description: Continue from this question number onward (default 4)
+        default: "4"
+      skip:
+        description: Already-sent question numbers to skip (comma list)
+        default: "21,22"
 
 jobs:
   distribute:
@@ -25,20 +28,20 @@ jobs:
         run: |
           python3 - <<'EOF'
           import json, os
-          raw = os.environ.get("QUESTIONS", "").strip()
-          if raw:
-              nums = [int(x) for x in raw.split(",") if x.strip()]
-          else:
-              with open("clean_nums.json") as f:
-                  nums = json.load(f)["clean"]
-          sz = int(os.environ.get("CHUNK", "10"))
+          with open("clean_nums.json") as f:
+              nums = json.load(f)["clean"]
+          start = int(os.environ.get("START_FROM", "4"))
+          skip = {int(x) for x in os.environ.get("SKIP", "").split(",") if x.strip()}
+          nums = [n for n in nums if n >= start and n not in skip]
+          sz = int(os.environ.get("CHUNK", "12"))
           chunks = [nums[i:i+sz] for i in range(0, len(nums), sz)]
           with open(os.environ.get("GITHUB_OUTPUT"), "a") as g:
               g.write("chunks=" + json.dumps(chunks) + "\n")
           EOF
         env:
-          CHUNK: ${{ github.event.inputs.chunk_size || '10' }}
-          QUESTIONS: ${{ github.event.inputs.questions || '' }}
+          CHUNK: ${{ github.event.inputs.chunk_size || '12' }}
+          START_FROM: ${{ github.event.inputs.start_from || '4' }}
+          SKIP: ${{ github.event.inputs.skip || '' }}
 
   render-and-send:
     needs: distribute
