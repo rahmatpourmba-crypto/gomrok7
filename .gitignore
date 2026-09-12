@@ -1,0 +1,11 @@
+# TTS audio (generated at runtime)
+remotion-video/public/customs/
+remotion-video/out/
+remotion-video/work/
+
+# dependency lockfiles/graphs
+remotion-video/node_modules/
+
+# logs & caches
+*.log
+__pycache__/

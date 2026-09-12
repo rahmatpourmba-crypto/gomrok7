@@ -1,0 +1,84 @@
+name: Send Gomrok Bank7 to Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      chunk_size:
+        description: Questions processed per job (default 10)
+        default: "10"
+      max_parallel:
+        description: Max parallel jobs (default 20)
+        default: "20"
+
+jobs:
+  distribute:
+    runs-on: ubuntu-latest
+    outputs:
+      chunks: ${{ steps.split.outputs.chunks }}
+      chunk_size: ${{ steps.split.outputs.chunk_size }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: split
+        shell: bash
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          with open("clean_nums.json") as f:
+              nums = json.load(f)["clean"]
+          sz = int(os.environ.get("CHUNK", "10"))
+          chunks = [nums[i:i+sz] for i in range(0, len(nums), sz)]
+          with open(os.environ.get("GITHUB_OUTPUT"), "a") as g:
+              g.write("chunks=" + json.dumps(chunks) + "\n")
+              g.write("chunk_size=" + str(sz) + "\n")
+          EOF
+        env:
+          CHUNK: ${{ github.event.inputs.chunk_size || '10' }}
+
+  render-and-send:
+    needs: distribute
+    runs-on: ubuntu-latest
+    timeout-minutes: 400
+    continue-on-error: false
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(github.event.inputs.max_parallel || '20') }}
+      matrix:
+        chunk: ${{ fromJson(needs.distribute.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (Chrome)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends google-chrome-stable fonts-noto-core fonts-noto-cjk
+          /usr/bin/google-chrome-stable --version
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          pip install --no-cache-dir edge-tts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: remotion-video/package-lock.json
+
+      - name: Install Remotion deps
+        working-directory: remotion-video
+        run: |
+          npm ci
+          ls node_modules/.bin/remotion
+
+      - name: Run batch (TTS -> render -> send -> delete mp4)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+          REMOTION_DIR: ${{ github.workspace }}/remotion-video
+        run: |
+          LIST="${{ join(matrix.chunk, ',') }}"
+          echo "processing questions: $LIST"
+          python3 batch_pipeline.py --json gomrok_bank7.json --list "$LIST" --send 2>&1 || echo "FAILED for chunk"
