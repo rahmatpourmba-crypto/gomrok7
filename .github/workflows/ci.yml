@@ -9,13 +9,15 @@ on:
       max_parallel:
         description: Max parallel jobs (default 20)
         default: "20"
+      questions:
+        description: Optional explicit comma-list (e.g. 21,22) to test only those; empty = all 2843
+        default: ""
 
 jobs:
   distribute:
     runs-on: ubuntu-latest
     outputs:
       chunks: ${{ steps.split.outputs.chunks }}
-      chunk_size: ${{ steps.split.outputs.chunk_size }}
     steps:
       - uses: actions/checkout@v4
       - id: split
@@ -23,16 +25,20 @@ jobs:
         run: |
           python3 - <<'EOF'
           import json, os
-          with open("clean_nums.json") as f:
-              nums = json.load(f)["clean"]
+          raw = os.environ.get("QUESTIONS", "").strip()
+          if raw:
+              nums = [int(x) for x in raw.split(",") if x.strip()]
+          else:
+              with open("clean_nums.json") as f:
+                  nums = json.load(f)["clean"]
           sz = int(os.environ.get("CHUNK", "10"))
           chunks = [nums[i:i+sz] for i in range(0, len(nums), sz)]
           with open(os.environ.get("GITHUB_OUTPUT"), "a") as g:
               g.write("chunks=" + json.dumps(chunks) + "\n")
-              g.write("chunk_size=" + str(sz) + "\n")
           EOF
         env:
           CHUNK: ${{ github.event.inputs.chunk_size || '10' }}
+          QUESTIONS: ${{ github.event.inputs.questions || '' }}
 
   render-and-send:
     needs: distribute
