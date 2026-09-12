@@ -261,41 +261,28 @@ def tofa(n):
 
 
 def build_caption(q, limit=1000):
-    header = ["سوال " + tofa(q["num"]),
-              "📘 آزمون کارگزاری گمرک",
-              "⚖️ قانون امور گمرکی ۱۴۰۴"]
-    if q.get("sec"):
-        header.append("📚 " + fa_clean(q["sec"]))
-    body = f"❓ {fa_clean(q['question'])}"
-    opts = []
-    for i, opt in enumerate(q["options"]):
-        opts.append(f"{FA_N[i]}) {fa_clean(opt)}")
+    body = fa_clean(q['question'])
+    opts = [f"{FA_N[i]}) {fa_clean(opt)}" for i, opt in enumerate(q["options"])]
     ans = f"✅ پاسخ صحیح: گزینه {FA_N[q['correct'] - 1]}"
-    if q.get("reason"):
-        ans += f"\n📖 توضیح: {fa_clean(q['reason'])}"
-    footer = ["🔹 @gomro68k_bot"]
 
-    # Try full caption first; shrink to ≤ limit if Telegram would reject it.
+    # Question + options + correct answer only.
     def make(with_opts, qmax=99999, rmax=99999):
-        lines = list(header) + [""] + [body[:qmax].rstrip()] + [""]
+        lines = [body[:qmax].rstrip()] + [""]
         if with_opts:
             lines += opts
-        lines += [""] + [ans[:rmax].rstrip()] + footer
+        lines += [""] + [ans[:rmax].rstrip()]
         return "\n".join(lines)
 
     c = make(True)
     if len(c) <= limit:
         return c
-    # Trim question first (options keep full).
     for cut in (700, 400, 200, 100):
         c = make(True, qmax=cut)
         if len(c) <= limit:
             return c
-    # Drop the options, keep question+answer.
     c = make(False)
     if len(c) <= limit:
         return c
-    # Trim the reason/answer, then the question.
     for rmax in (500, 300, 150, 0):
         c = make(False, rmax=rmax)
         if len(c) <= limit:
