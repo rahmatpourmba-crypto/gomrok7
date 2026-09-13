@@ -1,0 +1,45 @@
+name: Send Gomrok Q21-22 Temp
+
+on:
+  workflow_dispatch:
+
+jobs:
+  render-and-send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (Chrome)
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends google-chrome-stable fonts-noto-core fonts-noto-cjk
+          /usr/bin/google-chrome-stable --version
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python deps
+        run: |
+          pip install --no-cache-dir edge-tts
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: remotion-video/package-lock.json
+
+      - name: Install Remotion deps
+        working-directory: remotion-video
+        run: |
+          npm ci
+          ls node_modules/.bin/remotion
+
+      - name: Send only q21 and q22
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+          REMOTION_DIR: ${{ github.workspace }}/remotion-video
+        run: |
+          python3 batch_pipeline.py --json gomrok_bank7.json --list "21,22" --send 2>&1 || echo "FAILED"
