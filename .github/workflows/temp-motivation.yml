@@ -1,0 +1,44 @@
+name: Send Motivational Message Temp
+
+on:
+  workflow_dispatch:
+
+jobs:
+  send-text:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send motivational text via Telegram
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+          MSG: >
+            الحمدلله رب العالمین 🌹
+
+            با تلاش و پشتکار، هر ۲۸۴۳ سوال این بانک، قدم به قدم، در این کانال بارگذاری شد.
+
+            دوست عزیز، مسیر موفقیت نه با سرعت، که با استمرار پیموده میشود. همین امروز که
+            یک سوال را جواب دادی، یک قدم به هدف نزدیکتر شدهای. فردا هم همینطور ادامه بده.
+            کوچکترین تلاش روزانه، بزرگترین تغییر را در سرنوشت تو رقم میزند.
+
+            یادت باشد: کسی برنده میشود که وقتی خسته است، باز هم میایستد. تو میتوانی.
+            به خودت ایمان داشته باش. 🌱
+
+            برای همه شما آرزوی موفقیت و توفیق دارم. 🙏
+            گروه کارگزاری گمرکی منابع
+        run: |
+          python3 - <<'EOF'
+          import os, json, urllib.request
+          tok = os.environ["TELEGRAM_TOKEN"]
+          chat = os.environ["TELEGRAM_CHAT"]
+          text = os.environ["MSG"]
+          url = f"https://api.telegram.org/bot{tok}/sendMessage"
+          data = json.dumps({"chat_id": chat, "text": text}).encode()
+          req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+          resp = urllib.request.urlopen(req).read().decode()
+          print(resp[:400])
+          ok = '"ok":true' in resp
+          print("send OK" if ok else "send FAILED")
+          if not ok:
+              raise SystemExit(1)
+          EOF
